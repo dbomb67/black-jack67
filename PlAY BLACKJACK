@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Blackjack Game</title>
+  <style>
+    html,body{height:100%;margin:0;font-family:Inter, Arial, sans-serif;background:#003d16;color:#fff;overflow:hidden}
+    .screen{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+    .hidden{display:none}
+
+    #betScreen{background:radial-gradient(circle at center,#0b5e2e 0%,#05321a 100%)}
+    h1,h2{margin:8px}
+    .chips{display:flex;gap:18px;margin-top:18px;flex-wrap:wrap;justify-content:center}
+    .chip{width:86px;height:86px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;cursor:pointer;box-shadow:0 6px 14px rgba(0,0,0,0.4)}
+    .chip[data-value="100"]{background:linear-gradient(#fff,#ddd);color:#000}
+    .chip[data-value="500"]{background:linear-gradient(#ffd36b,#f59e0b);color:#000}
+    .chip[data-value="1000"]{background:linear-gradient(#ff6b6b,#ee2c2c)}
+    .status{margin-top:12px;font-size:18px}
+    #dealBtn{margin-top:14px;padding:12px 20px;border-radius:10px;border:none;background:#f59e0b;color:#000;font-weight:800;cursor:pointer}
+
+    #gameScreen{background:url('https://upload.wikimedia.org/wikipedia/commons/thumb/4/45/Blackjack_table_layout.svg/1024px-Blackjack_table_layout.svg.png') center/cover no-repeat}
+    .table-area{width:100%;max-width:1100px;padding:28px;display:flex;justify-content:space-between;align-items:flex-start}
+    .hand-col{display:flex;flex-direction:column;align-items:center;gap:10px}
+    .cards{display:flex;gap:12px;perspective:1000px}
+    .card{width:110px;height:150px;background:#fff;color:#000;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:700;box-shadow:0 12px 30px rgba(0,0,0,0.4);transform-style:preserve-3d;transition:transform .6s;backface-visibility:hidden;transform:rotateY(180deg)}
+    .card.front{transform:rotateY(0deg)}
+    .card.back{background:linear-gradient(135deg,#2b2b2b,#111);color:transparent;border:2px solid #222}
+    .totals{color:#ffdf5c;font-weight:700;margin-top:6px}
+
+    .controls{margin-top:18px;display:flex;gap:12px}
+    .btn{padding:10px 16px;border-radius:8px;border:none;background:#111;color:#fff;cursor:pointer}
+    .btn.primary{background:#10b981;color:#001}
+
+    #resultOverlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;transition:opacity 0.3s ease;opacity:0;}
+    #resultOverlay.show{opacity:1;pointer-events:auto;}
+    .resultBox{background:rgba(0,0,0,0.8);padding:20px 28px;border-radius:12px;font-size:28px;font-weight:800;color:#fff;}
+  </style>
+</head>
+<body>
+  <div id="betScreen" class="screen">
+    <h1>Choose Your Bet</h1>
+    <div class="chips" id="chipContainer"></div>
+    <div class="status">Current Bet: $<span id="betAmount">0</span></div>
+    <div class="status">Total Chips: $<span id="chipTotal">2000</span></div>
+    <button id="dealBtn">Deal</button>
+    <div id="resetNotice" class="status hidden"><strong>You're out of chips!</strong><br><button id="resetChipsBtn" class="btn primary">Reset to 2000</button></div>
+  </div>
+
+  <div id="gameScreen" class="screen hidden">
+    <div class="table-area">
+      <div class="hand-col" id="playerCol">
+        <div><strong>Player</strong></div>
+        <div class="cards" id="playerCards"></div>
+        <div class="totals">Total: <span id="playerTotal">0</span></div>
+      </div>
+      <div class="hand-col" id="dealerCol">
+        <div><strong>Dealer</strong></div>
+        <div class="cards" id="dealerCards"></div>
+        <div class="totals">Total: <span id="dealerTotal">?</span></div>
+      </div>
+    </div>
+    <div class="controls">
+      <button id="hitBtn" class="btn">Hit</button>
+      <button id="standBtn" class="btn primary">Stand</button>
+      <button id="resetBtn" class="btn">Reset</button>
+    </div>
+  </div>
+
+  <div id="resultOverlay">
+    <div class="resultBox" id="resultBox"></div>
+  </div>
+
+<script>
+let chips=2000, bet=0, deck=[], playerHand=[], dealerHand=[];
+const chipValues=[100,500,1000];
+const betScreen=document.getElementById('betScreen');
+const gameScreen=document.getElementById('gameScreen');
+const chipContainer=document.getElementById('chipContainer');
+const betAmountEl=document.getElementById('betAmount');
+const chipTotalEl=document.getElementById('chipTotal');
+const dealBtn=document.getElementById('dealBtn');
+const resetNotice=document.getElementById('resetNotice');
+const resetChipsBtn=document.getElementById('resetChipsBtn');
+const playerCards=document.getElementById('playerCards');
+const dealerCards=document.getElementById('dealerCards');
+const playerTotalEl=document.getElementById('playerTotal');
+const dealerTotalEl=document.getElementById('dealerTotal');
+const hitBtn=document.getElementById('hitBtn');
+const standBtn=document.getElementById('standBtn');
+const resetBtn=document.getElementById('resetBtn');
+const resultOverlay=document.getElementById('resultOverlay');
+const resultBox=document.getElementById('resultBox');
+
+function showScreen(screen){
+  if(screen==='bet'){betScreen.classList.remove('hidden');gameScreen.classList.add('hidden');}
+  if(screen==='game'){betScreen.classList.add('hidden');gameScreen.classList.remove('hidden');}
+}
+function createChips(){
+  chipContainer.innerHTML='';
+  chipValues.forEach(v=>{
+    if(chips>=v){
+      const d=document.createElement('div');d.className='chip';d.dataset.value=v;d.textContent='$'+v;
+      d.onclick=()=>{if(bet+v<=chips){bet+=v;updateBetUI();animateChipToCenter(d);}};
+      chipContainer.appendChild(d);
+    }
+  });
+}
+function updateBetUI(){
+  betAmountEl.textContent=bet;chipTotalEl.textContent=chips;
+  resetNotice.classList.toggle('hidden',chips>0);
+}
+function createDeck(){
+  deck=[];const suits=['♠','♥','♦','♣'];const vals=['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
+  suits.forEach(s=>vals.forEach(v=>deck.push({s,v})));
+  for(let i=deck.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[deck[i],deck[j]]=[deck[j],deck[i]];}
+}
+function draw(){return deck.pop();}
+function valueOf(hand){let sum=0,aces=0;hand.forEach(c=>{if(c.v==='A'){sum+=11;aces++}else if(['J','Q','K'].includes(c.v)){sum+=10}else sum+=parseInt(c.v);});while(sum>21&&aces>0){sum-=10;aces--; }return sum;}
+function visibleDealerValue(){if(dealerHand.length===0)return 0;let visible=[dealerHand[0]];return valueOf(visible);}
+function cardDom(card,faceDown=false){const el=document.createElement('div');el.className='card';if(faceDown){el.classList.add('back');}else{el.classList.add('front');el.textContent=card.v+card.s;}return el;}
+function flipCard(el,card){setTimeout(()=>{el.classList.remove('back');el.textContent=card.v+card.s;el.classList.add('front');},150);}
+function animateChipToCenter(chipEl){const clone=chipEl.cloneNode(true);clone.style.position='fixed';const rect=chipEl.getBoundingClientRect();clone.style.left=rect.left+'px';clone.style.top=rect.top+'px';clone.style.transition='transform .45s ease, opacity .45s ease';document.body.appendChild(clone);const cx=window.innerWidth/2-40;const cy=window.innerHeight/2-40;requestAnimationFrame(()=>{clone.style.transform='translate('+(cx-rect.left)+'px,'+(cy-rect.top)+'px) scale(.6)';clone.style.opacity='0';});setTimeout(()=>clone.remove(),480);}
+function resetGame(){chips=2000;bet=0;createChips();updateBetUI();showScreen('bet');}
+function deal(){if(bet<=0)return alert('Place a bet first');if(bet>chips)return alert('Bet exceeds your chips');chips-=bet;updateBetUI();createDeck();playerHand=[draw(),draw()];dealerHand=[draw(),draw()];renderHands(true);showScreen('game');}
+function renderHands(hideDealerHole=true){playerCards.innerHTML='';dealerCards.innerHTML='';playerHand.forEach((c,idx)=>{const el=cardDom(c,false);playerCards.appendChild(el);setTimeout(()=>el.classList.add('front'),200*idx);});dealerHand.forEach((c,idx)=>{const faceDown=hideDealerHole&&idx===1;const el=cardDom(c,faceDown);dealerCards.appendChild(el);if(!faceDown)setTimeout(()=>el.classList.add('front'),200*idx);});playerTotalEl.textContent=valueOf(playerHand);dealerTotalEl.textContent=hideDealerHole?visibleDealerValue():valueOf(dealerHand);}
+function playerHit(){const c=draw();playerHand.push(c);const el=cardDom(c,false);playerCards.appendChild(el);setTimeout(()=>el.classList.add('front'),150);playerTotalEl.textContent=valueOf(playerHand);if(valueOf(playerHand)>21)finalizeRound(false);}
+function playerStand(){const dealerChildren=dealerCards.children;if(dealerChildren[1]&&dealerChildren[1].classList.contains('back'))flipCard(dealerChildren[1],dealerHand[1]);let delay=600;setTimeout(()=>{
+  const interval=setInterval(()=>{
+    if(valueOf(dealerHand)<17){
+      dealerHand.push(draw());
+      const el=cardDom(dealerHand[dealerHand.length-1],false);
+      dealerCards.appendChild(el);
+      setTimeout(()=>el.classList.add('front'),150);
+      dealerTotalEl.textContent=valueOf(dealerHand);
+    } else {
+      clearInterval(interval);
+      dealerTotalEl.textContent=valueOf(dealerHand);
+      const p=valueOf(playerHand),d=valueOf(dealerHand);
+      if(p<=21&&(p>d||d>21))finalizeRound(true);else if(p===d)finalizeRound('push');else finalizeRound(false);
+    }
+  },700);
+},delay);}
+function finalizeRound(result){if(result===true){const winAmount=bet;chips+=bet+winAmount;showResult(`You Won +$${winAmount}`);}else if(result==='push'){chips+=bet;showResult('Push — bet returned');}else{showResult(`You Lost -$${bet}`);}setTimeout(()=>{hideResult();bet=0;updateBetUI();createChips();if(chips<=0){resetNotice.classList.remove('hidden');}showScreen('bet');},4000);}
+function showResult(text){resultBox.textContent=text;resultOverlay.classList.add('show');setTimeout(hideResult,3000);}
+function hideResult(){resultOverlay.classList.remove('show');}
+
+dealBtn.addEventListener('click',deal);hitBtn.addEventListener('click',playerHit);standBtn.addEventListener('click',playerStand);resetBtn.addEventListener('click',resetGame);resetChipsBtn.addEventListener('click',resetGame);
+
+updateBetUI();createChips();showScreen('bet');
+</script>
+</body>
+</html>
